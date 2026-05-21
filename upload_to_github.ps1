@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Continue"
+$ErrorActionPreference = "Stop"
 
 $repoUrl = "https://github.com/dda428830-coco/liquidity-monitor.git"
 
@@ -33,6 +33,11 @@ if ($remote -contains "origin") {
     git remote set-url origin $repoUrl
 } else {
     git remote add origin $repoUrl
+}
+
+git fetch origin main 2>$null
+if ($LASTEXITCODE -eq 0) {
+    git pull --rebase origin main
 }
 
 git push -u origin main
