@@ -29,8 +29,8 @@ def main() -> int:
     args = _parse_args()
     _load_env(args.env_file)
     cfg = _load_config(args.config)
-    metrics = collect_metrics(cfg)
-    assessment = assess(metrics, cfg)
+    metrics, data_warnings = collect_metrics(cfg)
+    assessment = assess(metrics, cfg, data_warnings=data_warnings)
     report = format_report(metrics, assessment, cfg)
 
     HistoryStore(args.db).save_metrics(metrics)
@@ -53,10 +53,11 @@ def _configure_output() -> None:
             stream.reconfigure(encoding="utf-8", errors="replace")
 
 
-def collect_metrics(cfg: dict) -> dict[str, Metric]:
+def collect_metrics(cfg: dict) -> tuple[dict[str, Metric], list[str]]:
     fred = FredFetcher()
     series_cfg = cfg["series"]
     raw: dict[str, list[Observation]] = {}
+    data_warnings: list[str] = []
     fred_keys = ("walcl", "tga_fred", "rrp", "reserves", "sofr", "iorb", "dgs10", "dgs2", "curve_10y2y")
     with ThreadPoolExecutor(max_workers=6) as executor:
         futures = {
@@ -72,7 +73,8 @@ def collect_metrics(cfg: dict) -> dict[str, Metric]:
                 print(f"数据源暂不可用: {series_id}: {exc}")
                 raw[key] = []
 
-    tga = _treasury_tga_metric(raw.get("tga_fred", []))
+    raw["rrp"] = _sanitize_rrp_observations(raw["rrp"], data_warnings)
+    tga = _treasury_tga_metric(raw.get("tga_fred", []), data_warnings)
     metrics = {
         "walcl": from_fred_millions("walcl", "美联储总资产", raw["walcl"]),
         "tga": tga,
@@ -86,17 +88,19 @@ def collect_metrics(cfg: dict) -> dict[str, Metric]:
     }
     metrics["net_liquidity"] = net_liquidity(metrics["walcl"], metrics["tga"], metrics["rrp"])
     metrics["sofr_iorb"] = spread_bp(metrics["sofr"], metrics["iorb"], "sofr_iorb", "SOFR-IORB")
-    return metrics
+    _append_cross_checks(metrics, raw.get("tga_fred", []), data_warnings)
+    return metrics, data_warnings
 
 
-def _treasury_tga_metric(fred_fallback: list[Observation]) -> Metric:
+def _treasury_tga_metric(fred_fallback: list[Observation], data_warnings: list[str]) -> Metric:
     try:
         balances = TreasuryFetcher().latest_tga()
     except Exception as exc:
-        print(f"Treasury Daily Statement暂不可用，回退FRED WTREGEN: {exc}")
+        data_warnings.append(f"Treasury Daily Statement暂不可用，TGA回退FRED WTREGEN: {exc}")
         return from_fred_millions("tga", "TGA余额", fred_fallback)
 
     if not balances:
+        data_warnings.append("Treasury Daily Statement没有返回TGA余额，TGA回退FRED WTREGEN。")
         return from_fred_millions("tga", "TGA余额", fred_fallback)
 
     latest = balances[-1]
@@ -111,6 +115,55 @@ def _treasury_tga_metric(fred_fallback: list[Observation]) -> Metric:
         change_1=None if previous is None else latest.value_100m_usd - previous.value_100m_usd,
         change_week=None if week_previous is None else latest.value_100m_usd - week_previous.value_100m_usd,
     )
+
+
+def _sanitize_rrp_observations(
+    observations: list[Observation],
+    data_warnings: list[str],
+) -> list[Observation]:
+    if not observations:
+        data_warnings.append("RRP序列为空，已跳过RRP阈值判断。")
+        return observations
+    latest = observations[-1]
+    if latest.value != 0:
+        return observations
+
+    recent_positive = [item for item in observations[-10:] if item.value > 0]
+    if recent_positive:
+        replacement = recent_positive[-1]
+        data_warnings.append(
+            "RRP最新值为0，疑似非交易日/占位/延迟数据；"
+            f"本次改用{replacement.date.isoformat()}的非零值{replacement.value / 100:.0f}亿。"
+        )
+        return [item for item in observations if item.date <= replacement.date]
+
+    data_warnings.append("RRP最近10条数据均为0，已保留原值；请核对纽约联储ON RRP原始数据。")
+    return observations
+
+
+def _append_cross_checks(
+    metrics: dict[str, Metric],
+    tga_fred_raw: list[Observation],
+    data_warnings: list[str],
+) -> None:
+    tga = metrics.get("tga")
+    if tga and tga.value is not None and tga.value < 3000:
+        data_warnings.append(
+            f"TGA为{tga.value:.0f}亿，处于极低水位；请核对Treasury DTS是否取到总Federal Reserve Account。"
+        )
+
+    if tga and tga.value is not None and tga_fred_raw:
+        fred_tga_100m = tga_fred_raw[-1].value / 100.0
+        if abs(tga.value - fred_tga_100m) > 1000:
+            data_warnings.append(
+                f"TGA与FRED WTREGEN差异较大: Treasury {tga.value:.0f}亿 vs FRED {fred_tga_100m:.0f}亿。"
+            )
+
+    spread = metrics.get("sofr_iorb")
+    if spread and spread.value is not None and spread.value < -5:
+        data_warnings.append(
+            f"SOFR-IORB为{spread.value:.0f}bp，低于常规监控区间；请核对SOFR和IORB日期是否一致。"
+        )
 
 
 def _load_config(path: Path) -> dict:

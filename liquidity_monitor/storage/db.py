@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS metric_history (
     change_1 REAL,
     change_5 REAL,
     change_week REAL,
+    avg_5 REAL,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (key, date)
 );
@@ -35,8 +36,8 @@ class HistoryStore:
                 conn.execute(
                     """
                     INSERT OR REPLACE INTO metric_history
-                    (key, date, value, unit, change_1, change_5, change_week)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    (key, date, value, unit, change_1, change_5, change_week, avg_5)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         metric.key,
@@ -46,5 +47,6 @@ class HistoryStore:
                         metric.change_1,
                         metric.change_5,
                         metric.change_week,
+                        metric.avg_5,
                     ),
                 )

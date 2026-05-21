@@ -17,7 +17,7 @@ def format_report(metrics: dict[str, Metric], assessment: Assessment, cfg: dict)
         "📈 核心数据:",
         f"• 美联储总资产:{_money(metrics.get('walcl'), trillion=True)}{_change(metrics.get('walcl'), '周环比')}",
         f"• TGA余额:{_money(metrics.get('tga'))}{_change(metrics.get('tga'), '周/近似环比')}",
-        f"• RRP余额:{_money(metrics.get('rrp'))}{_change(metrics.get('rrp'), '日环比')}",
+        f"• RRP余额:{_money(metrics.get('rrp'))}{_avg5(metrics.get('rrp'))}{_change(metrics.get('rrp'), '日环比')}",
         f"• 银行准备金:{_money(metrics.get('reserves'), trillion=True)}",
         f"• SOFR:{_rate(metrics.get('sofr'))} (IORB利差 {_bp_value(metrics.get('sofr_iorb'))})",
         f"• 10年美债:{_rate(metrics.get('dgs10'))}",
@@ -31,6 +31,10 @@ def format_report(metrics: dict[str, Metric], assessment: Assessment, cfg: dict)
         lines.extend(f"• {alert.title}: {alert.detail}" for alert in assessment.alerts[:8])
     else:
         lines.append("• 暂无阈值突破。")
+
+    if assessment.data_warnings:
+        lines.extend(["", "🧪 数据核验:"])
+        lines.extend(f"• {warning}" for warning in assessment.data_warnings[:6])
 
     lines.extend(
         [
@@ -60,6 +64,12 @@ def _change(metric: Metric | None, label: str) -> str:
         return ""
     arrow = "📈" if change > 0 else "📉" if change < 0 else "➡️"
     return f"({label} {change:+.0f}亿){arrow}"
+
+
+def _avg5(metric: Metric | None) -> str:
+    if not metric or metric.avg_5 is None:
+        return ""
+    return f"(5日均值 {metric.avg_5:.0f}亿)"
 
 
 def _rate(metric: Metric | None) -> str:

@@ -14,6 +14,7 @@ class Metric:
     change_1: float | None = None
     change_5: float | None = None
     change_week: float | None = None
+    avg_5: float | None = None
 
 
 def from_fred_millions(
@@ -35,6 +36,7 @@ def from_fred_millions(
         change_1=_change_100m(observations, 1),
         change_5=_change_100m(observations, 5),
         change_week=_change_100m(observations, 1),
+        avg_5=_avg_100m(observations, 5),
     )
 
 
@@ -79,3 +81,10 @@ def _change_100m(observations: list, offset: int) -> float | None:
     if len(observations) <= offset:
         return None
     return (observations[-1].value - observations[-1 - offset].value) / 100.0
+
+
+def _avg_100m(observations: list, window: int) -> float | None:
+    recent = observations[-window:]
+    if not recent:
+        return None
+    return sum(item.value for item in recent) / len(recent) / 100.0

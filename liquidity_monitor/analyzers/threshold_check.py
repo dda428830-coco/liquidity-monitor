@@ -20,9 +20,10 @@ class Assessment:
     level: str
     alerts: list[Alert]
     strategy: str
+    data_warnings: list[str]
 
 
-def assess(metrics: dict[str, Metric], cfg: dict) -> Assessment:
+def assess(metrics: dict[str, Metric], cfg: dict, data_warnings: list[str] | None = None) -> Assessment:
     t = cfg["thresholds_100m_usd"]
     bp = cfg["thresholds_bp"]
     alerts: list[Alert] = []
@@ -36,11 +37,28 @@ def assess(metrics: dict[str, Metric], cfg: dict) -> Assessment:
     _check_dgs10(metrics.get("dgs10"), bp, alerts)
 
     level = _base_level(metrics, cfg)
+    red_reasons = _red_confirmation_reasons(metrics, cfg)
+    if len(red_reasons) >= 2:
+        alerts.append(
+            Alert(
+                "red",
+                "多因子危机确认",
+                "；".join(red_reasons[:4]) + "。"
+            )
+        )
+        level = "red"
     for alert in alerts:
+        if alert.level == "red" and len(red_reasons) < 2 and alert.title != "多因子危机确认":
+            continue
         if SEVERITY_ORDER[alert.level] > SEVERITY_ORDER[level]:
             level = alert.level
 
-    return Assessment(level=level, alerts=alerts, strategy=_strategy(level))
+    return Assessment(
+        level=level,
+        alerts=alerts,
+        strategy=_strategy(level),
+        data_warnings=data_warnings or [],
+    )
 
 
 def _check_walcl(metric: Metric | None, t: dict, alerts: list[Alert]) -> None:
@@ -66,8 +84,15 @@ def _check_tga(metric: Metric | None, t: dict, alerts: list[Alert]) -> None:
 def _check_rrp(metric: Metric | None, t: dict, alerts: list[Alert]) -> None:
     if not metric or metric.value is None:
         return
-    if metric.value < t["rrp_red"]:
-        alerts.append(Alert("red", "RRP红色警戒", f"RRP余额{metric.value:.0f}亿，低于{t['rrp_red']:.0f}亿。"))
+    rrp_confirm_value = metric.avg_5 if metric.avg_5 is not None else metric.value
+    if rrp_confirm_value < t["rrp_red"]:
+        alerts.append(
+            Alert(
+                "orange",
+                "RRP极低水位",
+                f"RRP确认值{rrp_confirm_value:.0f}亿，低于{t['rrp_red']:.0f}亿；需等待资金利率或准备金共振才升级红色。",
+            )
+        )
     elif metric.value < t["rrp_high_alert"]:
         alerts.append(Alert("orange", "RRP高度警报", f"RRP余额{metric.value:.0f}亿，低于{t['rrp_high_alert']:.0f}亿。"))
     if metric.change_1 is not None and metric.change_1 < t["rrp_day_drop_alert"]:
@@ -96,13 +121,13 @@ def _check_net(metric: Metric | None, t: dict, alerts: list[Alert]) -> None:
 def _check_sofr(sofr: Metric | None, spread: Metric | None, bp: dict, alerts: list[Alert]) -> None:
     if spread and spread.value is not None:
         if spread.value > bp["sofr_iorb_red"]:
-            alerts.append(Alert("red", "SOFR-IORB利差红色警戒", f"利差{spread.value:.0f}bp。"))
+            alerts.append(Alert("orange", "SOFR-IORB利差红色阈值", f"利差{spread.value:.0f}bp；需多因子确认才升级红色。"))
         elif spread.value > bp["sofr_iorb_watch"]:
             alerts.append(Alert("orange", "SOFR-IORB利差警惕", f"利差{spread.value:.0f}bp。"))
         elif spread.value > bp["sofr_iorb_tight"]:
             alerts.append(Alert("yellow", "SOFR-IORB利差偏紧", f"利差{spread.value:.0f}bp。"))
     if sofr and sofr.change_1 is not None and sofr.change_1 > bp["sofr_day_jump_alert"]:
-        alerts.append(Alert("red", "SOFR单日跳升", f"SOFR单日上行{sofr.change_1:.0f}bp。"))
+        alerts.append(Alert("orange", "SOFR单日跳升", f"SOFR单日上行{sofr.change_1:.0f}bp；需多因子确认才升级红色。"))
 
 
 def _check_dgs10(metric: Metric | None, bp: dict, alerts: list[Alert]) -> None:
@@ -117,13 +142,6 @@ def _base_level(metrics: dict[str, Metric], cfg: dict) -> str:
     rrp = metrics.get("rrp")
     tga = metrics.get("tga")
     spread = metrics.get("sofr_iorb")
-
-    red_hits = [
-        rrp and rrp.value is not None and rrp.value < t["rrp_red"],
-        spread and spread.value is not None and spread.value > bp["sofr_iorb_red"],
-    ]
-    if any(red_hits):
-        return "red"
 
     orange_hits = [
         net and net.change_week is not None and net.change_week < -t["net_liquidity_week_abs_alert"],
@@ -144,6 +162,36 @@ def _base_level(metrics: dict[str, Metric], cfg: dict) -> str:
         return "green"
 
     return "yellow"
+
+
+def _red_confirmation_reasons(metrics: dict[str, Metric], cfg: dict) -> list[str]:
+    t = cfg["thresholds_100m_usd"]
+    bp = cfg["thresholds_bp"]
+    reasons: list[str] = []
+
+    rrp = metrics.get("rrp")
+    if rrp:
+        rrp_confirm_value = rrp.avg_5 if rrp.avg_5 is not None else rrp.value
+        if rrp_confirm_value is not None and rrp_confirm_value < t["rrp_red"]:
+            reasons.append(f"RRP 5日均值/确认值{rrp_confirm_value:.0f}亿低于{t['rrp_red']:.0f}亿")
+
+    spread = metrics.get("sofr_iorb")
+    if spread and spread.value is not None and spread.value > bp["sofr_iorb_watch"]:
+        reasons.append(f"SOFR-IORB利差{spread.value:.0f}bp高于{bp['sofr_iorb_watch']:.0f}bp")
+
+    reserves = metrics.get("reserves")
+    if reserves and reserves.value is not None and reserves.value < t["reserves_red"]:
+        reasons.append(f"银行准备金{reserves.value / 10000:.2f}万亿低于{t['reserves_red'] / 10000:.2f}万亿")
+
+    sofr = metrics.get("sofr")
+    if sofr and sofr.change_1 is not None and sofr.change_1 > bp["sofr_day_jump_alert"]:
+        reasons.append(f"SOFR单日上行{sofr.change_1:.0f}bp")
+
+    net = metrics.get("net_liquidity")
+    if net and net.change_week is not None and net.change_week < -t["net_liquidity_week_abs_alert"]:
+        reasons.append(f"净流动性周环比减少{abs(net.change_week):.0f}亿")
+
+    return reasons
 
 
 def _strategy(level: str) -> str:
