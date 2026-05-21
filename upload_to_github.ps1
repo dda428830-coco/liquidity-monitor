@@ -4,43 +4,55 @@ $repoUrl = "https://github.com/dda428830-coco/liquidity-monitor.git"
 
 Set-Location -LiteralPath $PSScriptRoot
 
-$safeDirectory = ((Resolve-Path -LiteralPath $PSScriptRoot).Path -replace "\\", "/")
-git config --global --unset-all safe.directory "..." 2>$null
-git config --global --add safe.directory $safeDirectory
+function Invoke-Git {
+    param(
+        [Parameter(ValueFromRemainingArguments = $true)]
+        [string[]]$Arguments
+    )
 
-if (-not (Test-Path ".git")) {
-    git init
+    & git @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "git $($Arguments -join ' ') failed with exit code $LASTEXITCODE"
+    }
 }
 
-git add .
+$safeDirectory = ((Resolve-Path -LiteralPath $PSScriptRoot).Path -replace "\\", "/")
+& git config --global --unset-all safe.directory "..." 2>$null
+& git config --global --add safe.directory $safeDirectory
 
-$null = git rev-parse --verify HEAD 2>$null
+if (-not (Test-Path ".git")) {
+    Invoke-Git init
+}
+
+Invoke-Git add .
+
+$null = & git rev-parse --verify HEAD 2>$null
 $hasCommit = ($LASTEXITCODE -eq 0)
 
-$status = git status --porcelain
+$status = & git status --porcelain
 if ($status) {
-    git commit -m "Initial liquidity monitor"
+    Invoke-Git commit -m "Initial liquidity monitor"
 } elseif (-not $hasCommit) {
-    git commit --allow-empty -m "Initial liquidity monitor"
+    Invoke-Git commit --allow-empty -m "Initial liquidity monitor"
 } else {
     Write-Host "No local changes to commit."
 }
 
-git branch -M main
+Invoke-Git branch -M main
 
-$remote = git remote
+$remote = & git remote
 if ($remote -contains "origin") {
-    git remote set-url origin $repoUrl
+    Invoke-Git remote set-url origin $repoUrl
 } else {
-    git remote add origin $repoUrl
+    Invoke-Git remote add origin $repoUrl
 }
 
-git fetch origin main 2>$null
+& git fetch origin main 2>$null
 if ($LASTEXITCODE -eq 0) {
-    git pull --rebase origin main
+    Invoke-Git pull --rebase origin main
 }
 
-git push -u origin main
+Invoke-Git push -u origin main
 
 Write-Host ""
 Write-Host "Upload complete: https://github.com/dda428830-coco/liquidity-monitor"
