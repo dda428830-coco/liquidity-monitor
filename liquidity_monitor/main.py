@@ -8,6 +8,7 @@ from pathlib import Path
 
 from liquidity_monitor.analyzers.liquidity_calc import (
     Metric,
+    from_fred_billions,
     from_fred_millions,
     from_fred_rate,
     net_liquidity,
@@ -78,7 +79,7 @@ def collect_metrics(cfg: dict) -> tuple[dict[str, Metric], list[str]]:
     metrics = {
         "walcl": from_fred_millions("walcl", "美联储总资产", raw["walcl"]),
         "tga": tga,
-        "rrp": from_fred_millions("rrp", "逆回购余额", raw["rrp"]),
+        "rrp": from_fred_billions("rrp", "逆回购余额", raw["rrp"]),
         "reserves": from_fred_millions("reserves", "银行准备金", raw["reserves"]),
         "sofr": from_fred_rate("sofr", "SOFR", raw["sofr"]),
         "iorb": from_fred_rate("iorb", "IORB", raw["iorb"]),
@@ -88,25 +89,26 @@ def collect_metrics(cfg: dict) -> tuple[dict[str, Metric], list[str]]:
     }
     metrics["net_liquidity"] = net_liquidity(metrics["walcl"], metrics["tga"], metrics["rrp"])
     metrics["sofr_iorb"] = spread_bp(metrics["sofr"], metrics["iorb"], "sofr_iorb", "SOFR-IORB")
-    _append_cross_checks(metrics, raw.get("tga_fred", []), data_warnings)
+    _append_cross_checks(metrics, data_warnings)
     return metrics, data_warnings
 
 
 def _treasury_tga_metric(fred_fallback: list[Observation], data_warnings: list[str]) -> Metric:
+    fred_metric = from_fred_millions("tga", "TGA余额", fred_fallback)
     try:
         balances = TreasuryFetcher().latest_tga()
     except Exception as exc:
         data_warnings.append(f"Treasury Daily Statement暂不可用，TGA回退FRED WTREGEN: {exc}")
-        return from_fred_millions("tga", "TGA余额", fred_fallback)
+        return fred_metric
 
     if not balances:
         data_warnings.append("Treasury Daily Statement没有返回TGA余额，TGA回退FRED WTREGEN。")
-        return from_fred_millions("tga", "TGA余额", fred_fallback)
+        return fred_metric
 
     latest = balances[-1]
     previous = balances[-2] if len(balances) >= 2 else None
     week_previous = balances[-6] if len(balances) >= 6 else previous
-    return Metric(
+    dts_metric = Metric(
         key="tga",
         label="TGA余额",
         date=latest.date,
@@ -115,6 +117,22 @@ def _treasury_tga_metric(fred_fallback: list[Observation], data_warnings: list[s
         change_1=None if previous is None else latest.value_100m_usd - previous.value_100m_usd,
         change_week=None if week_previous is None else latest.value_100m_usd - week_previous.value_100m_usd,
     )
+    data_warnings.append(
+        f"TGA DTS口径: {latest.account_type or '未知account_type'}，日期{latest.date.isoformat()}，值{latest.value_100m_usd:.0f}亿。"
+    )
+
+    if fred_metric.value is None:
+        return dts_metric
+
+    diff = abs(dts_metric.value - fred_metric.value)
+    if diff > 1000:
+        data_warnings.append(
+            "TGA DTS与FRED WTREGEN差异超过1000亿，"
+            f"本次净流动性采用FRED值{fred_metric.value:.0f}亿；DTS值{dts_metric.value:.0f}亿需核对口径/字段。"
+        )
+        return fred_metric
+
+    return dts_metric
 
 
 def _sanitize_rrp_observations(
@@ -133,7 +151,7 @@ def _sanitize_rrp_observations(
         replacement = recent_positive[-1]
         data_warnings.append(
             "RRP最新值为0，疑似非交易日/占位/延迟数据；"
-            f"本次改用{replacement.date.isoformat()}的非零值{replacement.value / 100:.0f}亿。"
+            f"本次改用{replacement.date.isoformat()}的非零值{replacement.value * 10:.0f}亿。"
         )
         return [item for item in observations if item.date <= replacement.date]
 
@@ -143,7 +161,6 @@ def _sanitize_rrp_observations(
 
 def _append_cross_checks(
     metrics: dict[str, Metric],
-    tga_fred_raw: list[Observation],
     data_warnings: list[str],
 ) -> None:
     tga = metrics.get("tga")
@@ -151,13 +168,6 @@ def _append_cross_checks(
         data_warnings.append(
             f"TGA为{tga.value:.0f}亿，处于极低水位；请核对Treasury DTS是否取到总Federal Reserve Account。"
         )
-
-    if tga and tga.value is not None and tga_fred_raw:
-        fred_tga_100m = tga_fred_raw[-1].value / 100.0
-        if abs(tga.value - fred_tga_100m) > 1000:
-            data_warnings.append(
-                f"TGA与FRED WTREGEN差异较大: Treasury {tga.value:.0f}亿 vs FRED {fred_tga_100m:.0f}亿。"
-            )
 
     spread = metrics.get("sofr_iorb")
     if spread and spread.value is not None and spread.value < -5:

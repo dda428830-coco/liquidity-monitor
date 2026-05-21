@@ -40,6 +40,29 @@ def from_fred_millions(
     )
 
 
+def from_fred_billions(
+    key: str,
+    label: str,
+    observations: list,
+    unit: str = "100m_usd",
+) -> Metric:
+    if not observations:
+        return Metric(key, label, None, None, unit)
+    latest = observations[-1]
+    value = latest.value * 10.0
+    return Metric(
+        key=key,
+        label=label,
+        date=latest.date,
+        value=value,
+        unit=unit,
+        change_1=_change_billions_to_100m(observations, 1),
+        change_5=_change_billions_to_100m(observations, 5),
+        change_week=_change_billions_to_100m(observations, 1),
+        avg_5=_avg_billions_to_100m(observations, 5),
+    )
+
+
 def from_fred_rate(key: str, label: str, observations: list) -> Metric:
     if not observations:
         return Metric(key, label, None, None, "percent")
@@ -88,3 +111,16 @@ def _avg_100m(observations: list, window: int) -> float | None:
     if not recent:
         return None
     return sum(item.value for item in recent) / len(recent) / 100.0
+
+
+def _change_billions_to_100m(observations: list, offset: int) -> float | None:
+    if len(observations) <= offset:
+        return None
+    return (observations[-1].value - observations[-1 - offset].value) * 10.0
+
+
+def _avg_billions_to_100m(observations: list, window: int) -> float | None:
+    recent = observations[-window:]
+    if not recent:
+        return None
+    return sum(item.value for item in recent) / len(recent) * 10.0

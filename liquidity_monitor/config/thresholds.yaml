@@ -1,5 +1,5 @@
 units:
-  fred_liquidity_series: "millions_usd"
+  fred_liquidity_series: "mixed"
   display_base: "100m_usd"
 
 levels:

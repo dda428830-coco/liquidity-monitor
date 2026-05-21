@@ -79,3 +79,11 @@ liquidity_monitor/config/thresholds.yaml
 
 - 资金量阈值使用“亿美元”
 - 利率利差阈值使用“bp”
+
+## 数据口径说明
+
+- TGA 优先抓取 Treasury Daily Statement 的 `Treasury General Account (TGA) Closing Balance`。
+- 如果 DTS 只返回旧口径 `Federal Reserve Account`，会在日报的“数据核验”里标明。
+- 如果 DTS 与 FRED `WTREGEN` 差异超过 1000 亿，净流动性计算会采用 FRED 值，并提示核对 DTS 字段和单位。
+- DTS 官方说明中 Operating Cash Balance 数字按“百万美元”四舍五入；程序显示时统一换算为“亿美元”。
+- FRED 的 WALCL、WTREGEN、WRESBAL 通常是“百万美元”口径；RRPONTSYD 是“十亿美元”口径，程序会单独乘以 10 换算为“亿美元”。

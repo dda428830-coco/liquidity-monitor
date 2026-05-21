@@ -17,6 +17,7 @@ TREASURY_OCB_URL = (
 class TreasuryBalance:
     date: date
     value_100m_usd: float
+    account_type: str
     source: str = "Treasury Daily Statement"
 
 
@@ -24,17 +25,18 @@ class TreasuryFetcher:
     def __init__(self, timeout: int = 10) -> None:
         self.timeout = timeout
 
-    def latest_tga(self, limit: int = 10) -> list[TreasuryBalance]:
+    def latest_tga(self, limit: int = 30) -> list[TreasuryBalance]:
         payload = get_json(
             TREASURY_OCB_URL,
             params={
-                "filter": "account_type:eq:Federal Reserve Account",
+                "fields": "record_date,account_type,close_today_bal,open_today_bal,open_month_bal",
                 "sort": "-record_date",
                 "page[size]": str(limit),
             },
             timeout=self.timeout,
         )
         data = payload.get("data", [])
+        data = _select_tga_rows(data)
         balances = []
         for row in data:
             raw_value = _pick_balance(row)
@@ -44,9 +46,44 @@ class TreasuryFetcher:
                 TreasuryBalance(
                     date=datetime.strptime(row["record_date"], "%Y-%m-%d").date(),
                     value_100m_usd=_to_100m_usd(raw_value),
+                    account_type=row.get("account_type", ""),
                 )
             )
         return sorted(balances, key=lambda item: item.date)
+
+
+def _select_tga_rows(rows: list[dict]) -> list[dict]:
+    if not rows:
+        return []
+    by_date: dict[str, list[dict]] = {}
+    for row in rows:
+        by_date.setdefault(row.get("record_date", ""), []).append(row)
+
+    selected = []
+    for record_date, date_rows in by_date.items():
+        if not record_date:
+            continue
+        row = _pick_tga_row(date_rows)
+        if row is not None:
+            selected.append(row)
+    return selected
+
+
+def _pick_tga_row(rows: list[dict]) -> dict | None:
+    preferred = (
+        "Treasury General Account (TGA) Closing Balance",
+        "Federal Reserve Account",
+        "Total Operating Balance",
+    )
+    for account_type in preferred:
+        for row in rows:
+            if row.get("account_type") == account_type:
+                return row
+    for row in rows:
+        account_type = str(row.get("account_type", "")).lower()
+        if "treasury general account" in account_type and "closing" in account_type:
+            return row
+    return None
 
 
 def _pick_balance(row: dict) -> Decimal | None:
