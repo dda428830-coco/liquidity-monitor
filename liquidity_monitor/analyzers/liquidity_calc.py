@@ -91,6 +91,8 @@ def net_liquidity(walcl: Metric, tga: Metric, rrp: Metric) -> Metric:
 def spread_bp(left: Metric, right: Metric, key: str, label: str) -> Metric:
     if left.value is None or right.value is None:
         return Metric(key, label, None, None, "bp")
+    if left.date != right.date:
+        return Metric(key, label, None, None, "bp")
     return Metric(
         key=key,
         label=label,

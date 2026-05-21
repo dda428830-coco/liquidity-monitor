@@ -19,7 +19,7 @@ def format_report(metrics: dict[str, Metric], assessment: Assessment, cfg: dict)
         f"• TGA余额:{_money(metrics.get('tga'))}{_change(metrics.get('tga'), '周/近似环比')}",
         f"• RRP余额:{_money(metrics.get('rrp'))}{_avg5(metrics.get('rrp'))}{_change(metrics.get('rrp'), '日环比')}",
         f"• 银行准备金:{_money(metrics.get('reserves'), trillion=True)}",
-        f"• SOFR:{_rate(metrics.get('sofr'))} (IORB利差 {_bp_value(metrics.get('sofr_iorb'))})",
+        f"• SOFR:{_rate(metrics.get('sofr'))}{_date_tag(metrics.get('sofr'))} (IORB利差 {_bp_value(metrics.get('sofr_iorb'))}{_date_tag(metrics.get('sofr_iorb'))})",
         f"• 10年美债:{_rate(metrics.get('dgs10'))}",
         "",
         f"💧 净流动性:{_money(metrics.get('net_liquidity'), trillion=True)}{_change(metrics.get('net_liquidity'), '周环比')}",
@@ -82,3 +82,9 @@ def _bp_value(metric: Metric | None) -> str:
     if not metric or metric.value is None:
         return "缺失"
     return f"{metric.value:+.0f}bp"
+
+
+def _date_tag(metric: Metric | None) -> str:
+    if not metric or metric.date is None:
+        return ""
+    return f"[{metric.date.isoformat()}]"

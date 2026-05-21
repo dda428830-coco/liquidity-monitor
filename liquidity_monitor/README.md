@@ -87,3 +87,4 @@ liquidity_monitor/config/thresholds.yaml
 - 如果 DTS 与 FRED `WTREGEN` 差异超过 1000 亿，净流动性计算会采用 FRED 值，并提示核对 DTS 字段和单位。
 - DTS 官方说明中 Operating Cash Balance 数字按“百万美元”四舍五入；程序显示时统一换算为“亿美元”。
 - FRED 的 WALCL、WTREGEN、WRESBAL 通常是“百万美元”口径；RRPONTSYD 是“十亿美元”口径，程序会单独乘以 10 换算为“亿美元”。
+- SOFR-IORB 只有在 SOFR 与 IORB 最新观测日期一致时才计算；日期不一致时会跳过利差预警确认，并在日报中提示核验。

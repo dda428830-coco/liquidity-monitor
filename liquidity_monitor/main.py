@@ -170,9 +170,17 @@ def _append_cross_checks(
         )
 
     spread = metrics.get("sofr_iorb")
+    sofr = metrics.get("sofr")
+    iorb = metrics.get("iorb")
+    if sofr and iorb and sofr.value is not None and iorb.value is not None and sofr.date != iorb.date:
+        data_warnings.append(
+            "SOFR与IORB日期不一致，已跳过SOFR-IORB利差预警确认: "
+            f"SOFR日期{sofr.date.isoformat() if sofr.date else '缺失'}，"
+            f"IORB日期{iorb.date.isoformat() if iorb.date else '缺失'}。"
+        )
     if spread and spread.value is not None and spread.value < -5:
         data_warnings.append(
-            f"SOFR-IORB为{spread.value:.0f}bp，低于常规监控区间；请核对SOFR和IORB日期是否一致。"
+            f"SOFR-IORB为{spread.value:.0f}bp，数值关系可自洽；若持续显著为负，建议核对官方SOFR当日值。"
         )
 
 
