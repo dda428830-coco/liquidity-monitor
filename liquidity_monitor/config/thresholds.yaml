@@ -1,0 +1,58 @@
+units:
+  fred_liquidity_series: "millions_usd"
+  display_base: "100m_usd"
+
+levels:
+  green:
+    name: "绿色"
+    label: "流动性宽松"
+    emoji: "🟢"
+  yellow:
+    name: "黄色"
+    label: "中性偏紧"
+    emoji: "🟡"
+  orange:
+    name: "橙色"
+    label: "警惕"
+    emoji: "🟠"
+  red:
+    name: "红色"
+    label: "危机预警"
+    emoji: "🔴"
+
+thresholds_100m_usd:
+  walcl_week_change_qe: 500
+  walcl_week_change_qt: -500
+  tga_extreme_loose: 3000
+  tga_loose: 5000
+  tga_normal_high: 8500
+  tga_tight: 9500
+  tga_week_abs_alert: 1500
+  rrp_red: 500
+  rrp_high_alert: 1000
+  rrp_watch: 2000
+  rrp_normal_high: 5000
+  rrp_loose_high: 10000
+  rrp_day_drop_alert: -500
+  reserves_red: 25000
+  reserves_watch: 30000
+  reserves_enough: 35000
+  net_liquidity_week_abs_alert: 1000
+
+thresholds_bp:
+  sofr_iorb_tight: 5
+  sofr_iorb_watch: 10
+  sofr_iorb_red: 20
+  sofr_day_jump_alert: 10
+  dgs10_day_abs_alert: 10
+
+series:
+  walcl: "WALCL"
+  tga_fred: "WTREGEN"
+  rrp: "RRPONTSYD"
+  reserves: "WRESBAL"
+  sofr: "SOFR"
+  iorb: "IORB"
+  dgs10: "DGS10"
+  dgs2: "DGS2"
+  curve_10y2y: "T10Y2Y"

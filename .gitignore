@@ -1,0 +1,4 @@
+__pycache__/
+*.py[cod]
+liquidity_monitor/storage/history.db
+liquidity_monitor/config/secrets.env
