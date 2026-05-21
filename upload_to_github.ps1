@@ -1,4 +1,5 @@
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
+$PSNativeCommandUseErrorActionPreference = $false
 
 $repoUrl = "https://github.com/dda428830-coco/liquidity-monitor.git"
 
@@ -47,7 +48,7 @@ if ($remote -contains "origin") {
     Invoke-Git remote add origin $repoUrl
 }
 
-& git fetch origin main 2>$null
+& git fetch origin main *> $null
 if ($LASTEXITCODE -eq 0) {
     Invoke-Git pull --rebase origin main
 }
